@@ -52,8 +52,8 @@ import os
             break
 """
 
-class RadarSerialCommunication:
-    def __init__(self, data_port, data_baud, config_port, config_baud):
+class RadarCom:
+    def __init__(self, data_port, data_baud, config_port, config_baud, sync_pattern):
         self.config_port = config_port
         self.data_port = data_port
         self.config_baud = config_baud
@@ -66,6 +66,7 @@ class RadarSerialCommunication:
         self.stop_event = threading.Event()
         self.tlv_header_len = 8
         self.header_len = 48
+        self.sync_pattern = sync_pattern
 
     def connect(self):
         try:
@@ -81,6 +82,7 @@ class RadarSerialCommunication:
             print(f"Failed to connect: {e}")
 
     def disconnect(self):
+        self.stop_streaming()
         if self.is_connected:
             self.data_connection.close()
             self.config_connection.close()
@@ -93,7 +95,7 @@ class RadarSerialCommunication:
             if self.is_connected:
                 try:
 
-                    time_packet = time()
+                    time_packet = time.time()
 
                     packet_header += self.data_connection.read(header_len-len(packet_header))
                     
@@ -117,7 +119,7 @@ class RadarSerialCommunication:
 
     def start_streaming(self):
         self.stop_event.clear()
-        self.stream_thread = threading.Thread(target=self.read_data)
+        self.stream_thread = threading.Thread(target=self.read_data, kwargs={'sync_pattern':0x708050603040102, 'header_len':self.header_len})
         self.stream_thread.start()
 
     def stop_streaming(self):
@@ -168,14 +170,19 @@ class RadarSerialCommunication:
         Every command from the chirp config loaded into an array.
     """
         
-        
-        for i in range(self.cmd_count):
-            self.config_port.write(bytearray(self.commands[i].encode()))
-            time.sleep(20e-3)
-            response = bytearray([])
-            while(self.config_port.in_waiting > 0):
-                response += self.config_port.read(1)
-            print(response.decode())
+        if self.is_connected:
+            try:
+                for i in range(self.cmd_count):
+                    self.config_connection.write(bytearray(self.commands[i].encode()))
+                    time.sleep(20e-3)
+                    response = bytearray([])
+                    while(self.config_connection.in_waiting > 0):
+                        response += self.config_connection.read(1)
+                    print(response.decode())
+            except serial.SerialException as e:
+                    print(f"Error reading data: {e}")
+                    self.disconnect()
+                    
         
 class RadarDataProcessor:
     def __init__(self, radar_serial_com):
