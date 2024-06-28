@@ -1,0 +1,6 @@
+README.md
+setup.py
+odin.egg-info/PKG-INFO
+odin.egg-info/SOURCES.txt
+odin.egg-info/dependency_links.txt
+odin.egg-info/top_level.txt
