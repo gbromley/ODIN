@@ -1,16 +1,13 @@
-import time
-import serial
-import queue
-import threading
-import struct
-import numpy as np
-
-import sys
 import os
+import queue
+import struct
+import sys
+import threading
+import time
 
+import numpy as np
+import serial
 
-
-        
 """ def readPacketHeader(dataPort):
     
     
@@ -52,6 +49,7 @@ import os
             break
 """
 
+
 class RadarCom:
     def __init__(self, data_port, data_baud, config_port, config_baud, sync_pattern):
         self.config_port = config_port
@@ -70,14 +68,26 @@ class RadarCom:
 
     def connect(self):
         try:
-            
-            self.config_connection = serial.Serial(self.config_port, 115200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=0.3)
-            self.data_connection = serial.Serial(self.data_port, 921600, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=0.3)
+
+            self.config_connection = serial.Serial(
+                self.config_port,
+                115200,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=0.3,
+            )
+            self.data_connection = serial.Serial(
+                self.data_port,
+                921600,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=0.3,
+            )
 
             self.is_connected = True
             print(f"Connected to {self.data_port} at {self.data_baud} baud")
             print(f"Connected to {self.config_port} at {self.config_baud} baud")
-            
+
         except serial.SerialException as e:
             print(f"Failed to connect: {e}")
 
@@ -97,11 +107,26 @@ class RadarCom:
 
                     time_packet = time.time()
 
-                    packet_header += self.data_connection.read(header_len-len(packet_header))
-                    
-                    sync, version, total_packet_len, platform, frameNumber, subFrameNumber, chirpProcessingMargin, frameProcessingMargin, trackProcessTime, uartSentTime, numTLVs, checksum =  struct.unpack('Q9I2H', packet_header[:header_len])
-                    
-                    if (sync == sync_pattern):
+                    packet_header += self.data_connection.read(
+                        header_len - len(packet_header)
+                    )
+
+                    (
+                        sync,
+                        version,
+                        total_packet_len,
+                        platform,
+                        frameNumber,
+                        subFrameNumber,
+                        chirpProcessingMargin,
+                        frameProcessingMargin,
+                        trackProcessTime,
+                        uartSentTime,
+                        numTLVs,
+                        checksum,
+                    ) = struct.unpack("Q9I2H", packet_header[:header_len])
+
+                    if sync == sync_pattern:
 
                         packet_header = bytearray([])
                         # Want to read and send the header and data so removing totalPacketLen-header_len
@@ -119,71 +144,73 @@ class RadarCom:
 
     def start_streaming(self):
         self.stop_event.clear()
-        self.stream_thread = threading.Thread(target=self.read_data, kwargs={'sync_pattern':0x708050603040102, 'header_len':self.header_len})
+        self.stream_thread = threading.Thread(
+            target=self.read_data,
+            kwargs={"sync_pattern": 0x708050603040102, "header_len": self.header_len},
+        )
         self.stream_thread.start()
 
     def stop_streaming(self):
         self.stop_event.set()
-        if hasattr(self, 'stream_thread'):
+        if hasattr(self, "stream_thread"):
             self.stream_thread.join()
 
     def get_data(self):
         if not self.data_queue.empty():
             return self.data_queue.get()
         return None
-    
+
     # This is getting to be radar specific. Once we have more sensors, we might need to rethink
     # class structure
     def read_config_file(self, config_file):
         try:
-            with open(config_file, 'r') as fp:
-                
+            with open(config_file, "r") as fp:
+
                 self.cmd_count = 0
                 self.commands = []
                 for line in fp:
-                    if (len(line) > 1):
-                        if (line[0] != '%'):
+                    if len(line) > 1:
+                        if line[0] != "%":
                             self.commands.append(line)
                             self.cmd_count += 1
-            
+
         except FileNotFoundError as err:
             print("Chirp config file not found.")
         finally:
             fp.close()
-    
-    
+
     def write_config(self):
         """
-    Writes the configuration out to a serial port.
+        Writes the configuration out to a serial port.
 
-    Parameters
-    ----------
-    configPort : Serial object
-        pyserial object
-        
-    configFileName : String
-        Radar chirp configuration file
+        Parameters
+        ----------
+        configPort : Serial object
+            pyserial object
 
-    Returns
-    -------
-    list[string]
-        Every command from the chirp config loaded into an array.
-    """
-        
+        configFileName : String
+            Radar chirp configuration file
+
+        Returns
+        -------
+        list[string]
+            Every command from the chirp config loaded into an array.
+        """
+
         if self.is_connected:
             try:
                 for i in range(self.cmd_count):
                     self.config_connection.write(bytearray(self.commands[i].encode()))
                     time.sleep(20e-3)
                     response = bytearray([])
-                    while(self.config_connection.in_waiting > 0):
+                    while self.config_connection.in_waiting > 0:
                         response += self.config_connection.read(1)
                     print(response.decode())
             except serial.SerialException as e:
-                    print(f"Error reading data: {e}")
-                    self.disconnect()
-                    
-        
+                print(f"Error reading data: {e}")
+                self.disconnect()
+
+
 class RadarDataProcessor:
     def __init__(self, radar_serial_com):
         self.radar_communication = radar_serial_com
@@ -196,12 +223,14 @@ class RadarDataProcessor:
             data = self.radar_communication.get_data()
             if data:
                 # Process the radar data here
-                header_data =  struct.unpack('Q9I2H', data[:self.header_len])
+                header_data = struct.unpack("Q9I2H", data[: self.header_len])
                 num_TLV = header_data[10]
                 uart_sent_time = header_data[9]
-                
-                processed_data = self.parse_radar_data(num_TLV,uart_sent_time, data[self.header_len:])
-                
+
+                processed_data = self.parse_radar_data(
+                    num_TLV, uart_sent_time, data[self.header_len :]
+                )
+
                 yield processed_data
             else:
                 break
@@ -211,65 +240,84 @@ class RadarDataProcessor:
         # This is just a placeholder
         for i in range(num_TLV):
 
-            tlv_type, tlv_len = struct.unpack('2I', tlv_packet[:self.tlv_header_len])
-            #What doe these tlv numbers mean?
-            if (tlv_type > 20 or tlv_len > 10000):
+            tlv_type, tlv_len = struct.unpack("2I", tlv_packet[: self.tlv_header_len])
+            # What doe these tlv numbers mean?
+            if tlv_type > 20 or tlv_len > 10000:
                 break
 
-            tlv_data = tlv_packet[self.tlv_header_len:]
+            tlv_data = tlv_packet[self.tlv_header_len :]
 
-            if (tlv_type == 6):
-                #Need to figure out out to build out the data structure
+            if tlv_type == 6:
+                # Need to figure out out to build out the data structure
                 self.process_tlv_6(tlv_len, tlv_data)
-                
-            elif (tlv_type == 7):
+
+            elif tlv_type == 7:
                 self.process_tlv_7(self, tlv_len, tlv_data)
 
-            elif (tlv_type == 8):
+            elif tlv_type == 8:
                 self.process_tlv_8(self, tlv_len, tlv_data)
-        if (num_TLV > 0):
-            print(' ')
+        if num_TLV > 0:
+            print(" ")
 
     def process_tlv_6(self, tlv_len, tlv_data):
-        #Need to define what the ints mean here for getting data
-        point_unit = struct.unpack('5f', tlv_data[:20])
-        # slowly removing data from the tlv_data 
+        # Need to define what the ints mean here for getting data
+        point_unit = struct.unpack("5f", tlv_data[:20])
+        # slowly removing data from the tlv_data
         tlv_data = tlv_data[20:]
-        num_detected_obj = int((tlv_len-self.tlv_header_len-20)/8)
+        num_detected_obj = int((tlv_len - self.tlv_header_len - 20) / 8)
         detected_objects = np.zeros((num_detected_obj, 5))
-        #this is the final output variable for now
-        results_string = ''
+        # this is the final output variable for now
+        results_string = ""
 
-        print('numDetectedObj: %d' % num_detected_obj)
+        print("numDetectedObj: %d" % num_detected_obj)
 
         for j in range(num_detected_obj):
 
-            elevation_j, azimuth_j, doppler_j, range_j, snr_j = struct.unpack('2bh2H', tlv_data[:8])
+            elevation_j, azimuth_j, doppler_j, range_j, snr_j = struct.unpack(
+                "2bh2H", tlv_data[:8]
+            )
 
             detected_objects[j, 0] = range_j * point_unit[3]
-            detected_objects[j, 1] = azimuth_j * point_unit[1] * 180/np.pi
-            detected_objects[j, 2] = elevation_j * point_unit[0] * 180/np.pi
+            detected_objects[j, 1] = azimuth_j * point_unit[1] * 180 / np.pi
+            detected_objects[j, 2] = elevation_j * point_unit[0] * 180 / np.pi
             detected_objects[j, 3] = doppler_j * point_unit[2]
             detected_objects[j, 4] = snr_j * point_unit[4]
 
             tlv_data = tlv_data[8:]
 
-            results_string += '%1.3f %1.3f %1.3f %1.3f %1.3f ' % (detected_objects[j, 0], detected_objects[j, 1], detected_objects[j, 2], detected_objects[j, 3], detected_objects[j, 4])
-        #return detected_objects
+            results_string += "%1.3f %1.3f %1.3f %1.3f %1.3f " % (
+                detected_objects[j, 0],
+                detected_objects[j, 1],
+                detected_objects[j, 2],
+                detected_objects[j, 3],
+                detected_objects[j, 4],
+            )
+        # return detected_objects
         print(results_string)
-    
-    def process_tlv_7(self, tlv_len, tlv_data):
-        num_targets = int((tlv_len-self.tlv_header_len)/112)
-        detected_targets = np.zeros((num_targets, 10))
-        results_string = ''
 
-        print('numOfTargets: %d' % num_targets)
+    def process_tlv_7(self, tlv_len, tlv_data):
+        num_targets = int((tlv_len - self.tlv_header_len) / 112)
+        detected_targets = np.zeros((num_targets, 10))
+        results_string = ""
+
+        print("numOfTargets: %d" % num_targets)
 
         for j in range(num_targets):
 
-            tid_j, posX_j, posY_j, posZ_j, velX_j, velY_j, velZ_j, accX_j, accY_j, accZ_j = struct.unpack('I9f', tlv_data[:40])
-            ec = struct.unpack('16f', tlv_data[40:40+64])
-            g, confidenceLevel = struct.unpack('2f', tlv_data[40+64:112])
+            (
+                tid_j,
+                posX_j,
+                posY_j,
+                posZ_j,
+                velX_j,
+                velY_j,
+                velZ_j,
+                accX_j,
+                accY_j,
+                accZ_j,
+            ) = struct.unpack("I9f", tlv_data[:40])
+            ec = struct.unpack("16f", tlv_data[40 : 40 + 64])
+            g, confidenceLevel = struct.unpack("2f", tlv_data[40 + 64 : 112])
 
             detected_targets[j, 0] = tid_j
             detected_targets[j, 1] = posX_j
@@ -282,21 +330,34 @@ class RadarDataProcessor:
             detected_targets[j, 8] = accY_j
             detected_targets[j, 9] = accZ_j
 
-            results_string += '%d %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f ' % (detected_targets[j, 0], detected_targets[j, 1], detected_targets[j, 2], detected_targets[j, 3], detected_targets[j, 4], detected_targets[j, 5], detected_targets[j, 6], detected_targets[j, 7], detected_targets[j, 8], detected_targets[j, 9])
+            results_string += (
+                "%d %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f %1.3f "
+                % (
+                    detected_targets[j, 0],
+                    detected_targets[j, 1],
+                    detected_targets[j, 2],
+                    detected_targets[j, 3],
+                    detected_targets[j, 4],
+                    detected_targets[j, 5],
+                    detected_targets[j, 6],
+                    detected_targets[j, 7],
+                    detected_targets[j, 8],
+                    detected_targets[j, 9],
+                )
+            )
 
             tlv_data = tlv_data[112:]
             print(results_string)
-            #return detected_targets
+            # return detected_targets
 
     def process_tlv_8(self, tlv_len, tlv_data):
         pass
         numDetectedObj_previous = tlv_len - self.tlv_header_len
         targetIndex = [0] * numDetectedObj_previous
-        results_string = ''
+        results_string = ""
 
         for j in range(numDetectedObj_previous):
 
-            targetIndex[j] = struct.unpack('B', packetPayload[:1])
-            results_string += '%d ' % targetIndex[j]
+            targetIndex[j] = struct.unpack("B", packetPayload[:1])
+            results_string += "%d " % targetIndex[j]
             packetPayload = packetPayload[1:]
-
