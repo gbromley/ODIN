@@ -1,0 +1,19 @@
+# Ballistic tracking configuration
+physics:
+  gravity: 9.81  # m/s^2
+  air_resistance: 0.0  # simplified model
+
+detection:
+  min_velocity: 2.0  # m/s - minimum velocity to consider object
+  max_acceleration_error: 2.0  # m/s^2 - tolerance for gravity detection
+  min_points_per_object: 3  # minimum radar returns to form an object
+
+tracking:
+  max_association_distance: 1.0  # meters
+  max_frames_to_skip: 3  # frames object can be missing before track is lost
+  min_track_length: 5  # frames before track is confirmed
+
+kalman_filter:
+  process_noise: 0.1
+  measurement_noise: 0.05
+  initial_velocity_variance: 1.0

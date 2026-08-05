@@ -25,6 +25,9 @@ dev = [
     "matplotlib",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.black]
 line-length = 100
 target-version = ["py311"]
