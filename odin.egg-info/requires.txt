@@ -1,7 +1,0 @@
-numpy
-pyserial
-
-[dev]
-pytest
-jupyter
-matplotlib

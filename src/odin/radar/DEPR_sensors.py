@@ -3,15 +3,10 @@ from abc import ABC, abstractmethod
 
 import serial
 import serial.tools.list_ports
+from time import sleep
 
 
-class SerialSensor(ABC):
-
-    SERIAL_DEFAULTS = {
-        "parity": serial.PARITY_NONE,
-        "stopbits": serial.STOPBITS_ONE,
-        "timeout": 1,
-    }
+class BaseSensor(ABC):
 
     def __init__(self):
         self._connected = False
@@ -41,25 +36,35 @@ class SerialSensor(ABC):
         self.disconnect()
 
 
-class RadarSensor(SerialSensor):
+class RadarSensor(BaseSensor):
 
     RADAR_CONFIG = "odin/radar/config/chirp_3DPeople.cfg"
 
+    SERIAL_CONNECTION_DEFAULTS = {
+        "parity": serial.PARITY_NONE,
+        "stopbits": serial.STOPBITS_ONE,
+        "timeout": 1,
+    }
+
     CONFIG_PORT_KWARGS = {
-        **SerialSensor.SERIAL_DEFAULTS,
+        **SERIAL_CONNECTION_DEFAULTS,
         "baudrate": 115200,
     }
 
     DATA_PORT_KWARGS = {
-        **SerialSensor.SERIAL_DEFAULTS,
+        **SERIAL_CONNECTION_DEFAULTS,
         "baudrate": 921600,
     }
 
     def __init__(self):
 
         super().__init__()
+
         self.config_conn = None
         self.data_conn = None
+
+        self.data_port = None
+        self.config_port = None
 
     @property
     def is_connected(self):
@@ -70,30 +75,33 @@ class RadarSensor(SerialSensor):
             and self._connected
         )
 
-    def connect(self, config_port=None, data_port=None):
+    def connect(self):
         """Connect to radar device with automatic port detection and verification."""
         # Prevent multiple connections
         if self.is_connected:
             print("Already connected to radar device")
             return True
 
-        try:
-            # Auto-detect ports if not provided
-            if all(x is None for x in [config_port, data_port]):
-                config_port, data_port = self._find_radar_ports()
+        # Auto-detect ports if not provided
+        if all(x is None for x in [self.config_port, self.data_port]):
+            config_port, data_port = self._find_radar_ports()
+            self._set_serial_ports(config_port, data_port)
 
-            # Check if ports were found/provided
-            if config_port is None or data_port is None:
-                raise ConnectionError("Could not find or identify radar ports")
 
+        # Check if ports were found/provided
+        if config_port is None or data_port is None:
+            return False
+
+        try: 
             # Connect to identified ports
-            self.config_conn = serial.Serial(config_port, **self.CONFIG_PORT_KWARGS)
-            self.data_conn = serial.Serial(data_port, **self.DATA_PORT_KWARGS)
+            self.config_conn = serial.Serial(self.config_port, **self.CONFIG_PORT_KWARGS)
+            self.data_conn = serial.Serial(self.data_port, **self.DATA_PORT_KWARGS)
 
             self._connected = True
-            print(
-                f"Connected to radar: config={self.config_conn.port}, data={self.data_conn.port}"
-            )
+            print(f"Connected to radar: config={self.config_conn.port}, data={self.data_conn.port}")
+            
+
+        
             return True
 
         except Exception as e:
@@ -165,11 +173,24 @@ class RadarSensor(SerialSensor):
                             return port
             except Exception as e:
                 print(f"Error testing {port} as config: {e}")
+                return None
+
 
         print("Could not identify config port")
         return None
+    
+    def _set_serial_ports(self, config_port = None, data_port = None):
 
-    def parse_radar_config(self, config_file=None):
+        self.config_port = config_port
+        self.data_port = data_port
+        
+    def _send_config(self): #needs to handle if the radar doesnt accept the config
+        commands = self._parse_radar_config(self.RADAR_CONFIG)
+        for index in range(len(commands)):
+            self.config_conn.write(bytearray(commands[index].encode()))
+            sleep(20e-3)
+
+    def _parse_radar_config(self, config_file=None):
         """Read radar configuration file.
 
         Args:
@@ -180,17 +201,14 @@ class RadarSensor(SerialSensor):
 
         try:
             with open(config_file, "r") as fp:
-                self.cmd_count = 0
-                self.commands = []
+                cmd_count = 0
+                commands = []
                 for line in fp:
                     if len(line) > 1:
                         if line[0] != "%":
-                            self.commands.append(line)
-                            self.cmd_count += 1
-            return True
-        except FileNotFoundError:
+                            commands.append(line)
+                            cmd_count += 1
+            return commands
+        except Exception:
             print(f"Config file not found: {config_file}")
-            return False
-        except Exception as e:
-            print(f"Error reading config file: {e}")
             return False
